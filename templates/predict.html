@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Predict Student Risk · LMS At-Risk Predictor{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <h1>Predict student risk</h1>
+    <p>Enter one student's recent LMS activity to estimate their at-risk probability.</p>
+  </div>
+
+  {% if model_missing %}
+    <section class="card notice" role="alert">
+      <h2>Model file missing</h2>
+      <p>Run <code>python train_model.py</code> in the project folder to create <code>model.pkl</code>, then restart this app.</p>
+    </section>
+  {% else %}
+    <section class="card" aria-labelledby="form-title">
+      <h2 id="form-title">Student activity</h2>
+      <form method="post" action="{{ url_for('predict') }}" novalidate>
+        <div class="form-grid">
+          {% for field in fields %}
+            <div class="field">
+              <label for="{{ field.name }}">{{ field.label }}</label>
+              <p class="help" id="{{ field.name }}-help">{{ field.help }}</p>
+              <input
+                id="{{ field.name }}"
+                name="{{ field.name }}"
+                type="number"
+                min="{{ field.min }}"
+                {% if field.max is not none %}max="{{ field.max }}"{% endif %}
+                step="{{ field.step }}"
+                value="{{ typed[field.name] }}"
+                required
+                aria-describedby="{{ field.name }}-help{% if errors.get(field.name) %} {{ field.name }}-error{% endif %}"
+                {% if errors.get(field.name) %}aria-invalid="true"{% endif %}
+              >
+              {% if errors.get(field.name) %}
+                <p class="error" id="{{ field.name }}-error">{{ errors[field.name] }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        <button type="submit">Predict risk</button>
+      </form>
+    </section>
+
+    {% if result %}
+      <section class="card result" aria-live="polite" aria-labelledby="result-title">
+        <h2 id="result-title">Prediction result</h2>
+        <div class="result-summary">
+          <span class="badge badge-{{ result.level }}">{{ result.level|capitalize }} risk</span>
+          <strong class="probability">{{ result.percentage }} at-risk probability</strong>
+        </div>
+        <p>{{ result.message }}</p>
+        <div class="explanation">
+          <h3>Main reasons</h3>
+          {% if result.explanation.drivers %}
+            <ul class="reason-list">
+              {% for driver in result.explanation.drivers %}
+                <li>
+                  <div class="reason-line"><span>{{ driver.text }}</span><strong>adds about {{ driver.points }} points</strong></div>
+                  <div class="reason-track"><div class="reason-fill" style="width: {{ [driver.points * 5, 100]|min }}%"></div></div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}<p>No major warning signs.</p>{% endif %}
+          <p><strong>Working in the student's favor:</strong>
+            {% if result.explanation.strengths %}
+              {% for strength in result.explanation.strengths %}{{ strength.text }} lowers risk about {{ strength.points }} points{% if not loop.last %}; {% endif %}{% endfor %}.
+            {% else %}No strong protective factors stood out.{% endif %}
+          </p>
+        </div>
+      </section>
+    {% endif %}
+    <p class="explanation-note"><strong>How explanations work:</strong> We test what would happen if one factor looked like a typical on-track student. These show what the model reacts to, not proven causes.</p>
+  {% endif %}
+{% endblock %}

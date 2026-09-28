@@ -1,0 +1,53 @@
+{
+  "trained_at": "2026-09-28T09:59:31+00:00",
+  "models": [
+    {
+      "name": "Logistic Regression",
+      "deployed": false,
+      "setting": "class_weight=balanced",
+      "accuracy": 0.74,
+      "precision": 0.618,
+      "recall": 0.71,
+      "f1": 0.661,
+      "roc_auc": 0.83,
+      "cv_roc_auc": 0.828,
+      "training_seconds": 0.02
+    },
+    {
+      "name": "K-Nearest Neighbors",
+      "deployed": false,
+      "setting": "k=3",
+      "accuracy": 0.723,
+      "precision": 0.625,
+      "recall": 0.561,
+      "f1": 0.591,
+      "roc_auc": 0.72,
+      "cv_roc_auc": 0.719,
+      "training_seconds": 0.83
+    },
+    {
+      "name": "Decision Tree",
+      "deployed": false,
+      "setting": "max_depth=7",
+      "accuracy": 0.69,
+      "precision": 0.562,
+      "recall": 0.589,
+      "f1": 0.575,
+      "roc_auc": 0.701,
+      "cv_roc_auc": 0.693,
+      "training_seconds": 0.48
+    },
+    {
+      "name": "Random Forest",
+      "deployed": true,
+      "setting": "max_depth=5, min_samples_split=2, n_estimators=200",
+      "accuracy": 0.743,
+      "precision": 0.623,
+      "recall": 0.71,
+      "f1": 0.664,
+      "roc_auc": 0.812,
+      "cv_roc_auc": 0.805,
+      "training_seconds": 0.8
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Model Performance · LMS At-Risk Predictor{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <h1>Model performance</h1>
+    <p>Results from the held-out test set and the training data.</p>
+  </div>
+
+  {% if missing %}
+    <section class="card notice" role="alert">
+      <h2>Training metrics unavailable</h2>
+      <p>{% if missing == 'missing' %}No <code>metrics.json</code> file was found.{% else %}<code>metrics.json</code> could not be read.{% endif %} Run <code>python train_model.py</code> in the project folder, then refresh this page.</p>
+    </section>
+  {% else %}
+    <section class="performance-grid" aria-label="Headline model metrics">
+      {% for card in cards %}
+        <div class="card performance-card">
+          <h2>{{ card.label }}</h2>
+          <strong>{{ card.value }}</strong>
+          <p>{{ card.help }}</p>
+        </div>
+      {% endfor %}
+    </section>
+
+    <section class="card" aria-labelledby="matrix-title">
+      <h2 id="matrix-title">Confusion matrix</h2>
+      <div class="table-scroll">
+        <table class="matrix-table">
+          <caption>Actual student status compared with predicted status</caption>
+          <thead>
+            <tr><th scope="col">Actual / Predicted</th><th scope="col">Not at risk</th><th scope="col">At risk</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Not at risk</th><td class="matrix-correct">{{ metrics.confusion_matrix.tn }}</td><td class="matrix-wrong">{{ metrics.confusion_matrix.fp }}</td></tr>
+            <tr><th scope="row">At risk</th><td class="matrix-wrong">{{ metrics.confusion_matrix.fn }}</td><td class="matrix-correct">{{ metrics.confusion_matrix.tp }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="matrix-explanation">The model missed {{ metrics.confusion_matrix.fn }} at-risk students and falsely flagged {{ metrics.confusion_matrix.fp }}.</p>
+    </section>
+
+    <section class="card" aria-labelledby="importance-title">
+      <h2 id="importance-title">Feature importance</h2>
+      <p class="section-intro">Higher bars show which activity measures influenced the Random Forest most overall.</p>
+      <div class="importance-list">
+        {% for bar in bars %}
+          <div class="importance-item">
+            <div class="importance-label"><span>{{ bar.name }}</span><strong>{{ bar.percentage }}</strong></div>
+            <div class="importance-track"><div class="importance-fill" style="width: {{ bar.width }}%"></div></div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="settings-title">
+      <h2 id="settings-title">Model settings and data</h2>
+      <dl class="settings-grid">
+        <div><dt>Number of trees</dt><dd>{{ metrics.best_params.n_estimators }}</dd></div>
+        <div><dt>Maximum tree depth</dt><dd>{{ metrics.best_params.max_depth if metrics.best_params.max_depth is not none else 'No limit' }}</dd></div>
+        <div><dt>Minimum samples to split</dt><dd>{{ metrics.best_params.min_samples_split }}</dd></div>
+        <div><dt>Total students</dt><dd>{{ metrics.dataset.total_rows }}</dd></div>
+        <div><dt>Training students</dt><dd>{{ metrics.dataset.training_rows }}</dd></div>
+        <div><dt>Test students</dt><dd>{{ metrics.dataset.test_rows }}</dd></div>
+        <div><dt>At-risk share</dt><dd>{{ metrics.dataset.at_risk_share_pct }}%</dd></div>
+        <div><dt>5-fold CV accuracy</dt><dd>{{ '%.1f%%'|format(metrics.cv_accuracy * 100) }}</dd></div>
+        <div><dt>Trained at (UTC)</dt><dd>{{ metrics.trained_at }}</dd></div>
+      </dl>
+    </section>
+
+    <section class="card read-note" aria-labelledby="read-title">
+      <h2 id="read-title">How to read this</h2>
+      <p>Recall matters most for this project because missing an at-risk student can cost more than a false alarm. Read it alongside precision to understand how often alerts are correct.</p>
+    </section>
+
+    <p class="limitation-note">Results come from a prototype model trained on simulated data, so they show the method works, not how it would perform on real students.</p>
+  {% endif %}
+{% endblock %}

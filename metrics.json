@@ -1,0 +1,60 @@
+{
+  "accuracy": 0.743,
+  "precision": 0.623,
+  "recall": 0.71,
+  "f1": 0.664,
+  "roc_auc": 0.812,
+  "cv_accuracy": 0.735,
+  "confusion_matrix": {
+    "tn": 147,
+    "fp": 46,
+    "fn": 31,
+    "tp": 76
+  },
+  "feature_importances": [
+    {
+      "feature": "avg_quiz_score",
+      "importance": 0.21187279450946434
+    },
+    {
+      "feature": "late_submission_rate",
+      "importance": 0.1586515954290994
+    },
+    {
+      "feature": "logins_per_week",
+      "importance": 0.1485433969947034
+    },
+    {
+      "feature": "avg_assignment_score",
+      "importance": 0.1455832066365592
+    },
+    {
+      "feature": "missed_deadlines",
+      "importance": 0.12270720168670189
+    },
+    {
+      "feature": "avg_session_min",
+      "importance": 0.08109658484375037
+    },
+    {
+      "feature": "forum_posts",
+      "importance": 0.07869965586587202
+    },
+    {
+      "feature": "days_since_last_login",
+      "importance": 0.05284556403384949
+    }
+  ],
+  "best_params": {
+    "max_depth": 5,
+    "min_samples_split": 2,
+    "n_estimators": 200
+  },
+  "dataset": {
+    "total_rows": 1500,
+    "training_rows": 1200,
+    "test_rows": 300,
+    "at_risk_share_pct": 35.6
+  },
+  "trained_at": "2026-09-28T08:48:54+00:00"
+}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Student Risk Dashboard · LMS At-Risk Predictor{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <h1>Student risk dashboard</h1>
+    <p>Students are ordered by their predicted at-risk probability.</p>
+  </div>
+
+  {% if missing %}
+    <section class="card notice" role="alert">
+      {% if missing == 'model' %}
+        <h2>Model file missing</h2>
+        <p>Run <code>python train_model.py</code> in the project folder to create <code>model.pkl</code>, then restart this app.</p>
+      {% else %}
+        <h2>Student data file missing</h2>
+        <p>Place <code>students.csv</code> in the project folder, then restart this app.</p>
+      {% endif %}
+    </section>
+  {% else %}
+    <div class="source-banner">
+      <strong>{% if uploaded %}Showing: your uploaded file ({{ summary.total }} students){% else %}Showing: sample data (students.csv){% endif %}</strong>
+      <div class="source-actions">
+        <a class="secondary-link" href="{{ url_for('download_results', level=level) }}">Download CSV</a>
+        <a class="secondary-link" href="{{ url_for('report') }}">Report</a>
+        {% if uploaded %}
+          <form action="{{ url_for('use_sample_data') }}" method="post"><button type="submit">Use sample data instead</button></form>
+        {% endif %}
+      </div>
+    </div>
+    {% if notice %}<p class="upload-notice" role="status">{{ notice }}</p>{% endif %}
+
+    <section class="summary-grid" aria-label="Student risk summary">
+      <div class="card summary-card"><span>Total students</span><strong>{{ summary.total }}</strong></div>
+      <div class="card summary-card"><span>High risk</span><strong>{{ summary.high }}</strong></div>
+      <div class="card summary-card"><span>Medium risk</span><strong>{{ summary.medium }}</strong></div>
+      <div class="card summary-card"><span>Low risk</span><strong>{{ summary.low }}</strong></div>
+      <div class="card summary-card"><span>Average risk probability</span><strong>{{ summary.average }}</strong></div>
+    </section>
+
+    <section class="card" aria-labelledby="students-title">
+      <div class="table-heading">
+        <h2 id="students-title">Students</h2>
+        <span>{{ filtered_count }} shown in {{ level }} filter</span>
+      </div>
+      <nav class="filters" aria-label="Filter students by risk level">
+        {% for option in ['all', 'high', 'medium', 'low'] %}
+          <a href="{{ url_for('dashboard', level=option) }}" {% if level == option %}aria-current="page" class="selected"{% endif %}>{{ option|capitalize }}</a>
+        {% endfor %}
+      </nav>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Student ID</th>
+              <th scope="col">Risk</th>
+              <th scope="col">Risk %</th>
+              <th scope="col">Avg quiz score</th>
+              <th scope="col">Late submission rate</th>
+              <th scope="col">Logins per week</th>
+              <th scope="col">Days since last login</th>
+              <th scope="col">Main reasons</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for student in students %}
+              <tr>
+                <th scope="row">{{ student.student_id }}</th>
+                <td><span class="badge badge-{{ student.risk_level }}">{{ student.risk_level|capitalize }}</span></td>
+                <td>{{ student.risk_percent }}</td>
+                <td>{{ '%.1f'|format(student.avg_quiz_score) }}</td>
+                <td>{{ '%.2f'|format(student.late_submission_rate) }}</td>
+                <td>{{ '%.1f'|format(student.logins_per_week) }}</td>
+                <td>{{ '%.1f'|format(student.days_since_last_login) }}</td>
+                <td>
+                  {% if student.risk_level in ['medium', 'high'] %}<div>{{ student.main_risk_factors or 'No major warning signs' }}</div>{% endif %}
+                  <details class="row-details">
+                    <summary>Full explanation</summary>
+                    {% if student.explanation.drivers %}
+                      <strong>Risk drivers</strong>
+                      <ul>{% for driver in student.explanation.drivers %}<li>{{ driver.text }} — adds about {{ driver.points }} points</li>{% endfor %}</ul>
+                    {% else %}<p>No major warning signs.</p>{% endif %}
+                    <strong>Working in the student's favor</strong>
+                    {% if student.explanation.strengths %}
+                      <ul>{% for strength in student.explanation.strengths %}<li>{{ strength.text }} — lowers risk about {{ strength.points }} points</li>{% endfor %}</ul>
+                    {% else %}<p>No strong protective factors stood out.</p>{% endif %}
+                  </details>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="8">No students to show.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination" aria-label="Table pages">
+        {% if page > 1 %}<a href="{{ url_for('dashboard', level=level, page=page-1) }}">Previous</a>{% else %}<span class="unavailable">Previous</span>{% endif %}
+        <span>Page {{ page }} of {{ page_count }}</span>
+        {% if page < page_count %}<a href="{{ url_for('dashboard', level=level, page=page+1) }}">Next</a>{% else %}<span class="unavailable">Next</span>{% endif %}
+      </div>
+      <p class="table-note">Risk levels come from a prototype model trained on simulated data.</p>
+    </section>
+
+    {% if comparison %}
+      <section class="card" aria-labelledby="comparison-title">
+        <h2 id="comparison-title">Model vs your labels</h2>
+        <div class="comparison-metrics">
+          <div><span>Accuracy</span><strong>{{ comparison.accuracy }}</strong></div>
+          <div><span>Precision</span><strong>{{ comparison.precision }}</strong></div>
+          <div><span>Recall</span><strong>{{ comparison.recall }}</strong></div>
+          <div><span>F1</span><strong>{{ comparison.f1 }}</strong></div>
+        </div>
+        <div class="table-scroll">
+          <table class="matrix-table">
+            <caption>Actual labels compared with model predictions at a 0.5 threshold</caption>
+            <thead><tr><th scope="col">Actual / Predicted</th><th scope="col">Not at risk</th><th scope="col">At risk</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Not at risk</th><td class="matrix-correct">{{ comparison.tn }}</td><td class="matrix-wrong">{{ comparison.fp }}</td></tr>
+              <tr><th scope="row">At risk</th><td class="matrix-wrong">{{ comparison.fn }}</td><td class="matrix-correct">{{ comparison.tp }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-note">This compares the prototype model with the labels in your file. If your data comes from a different population than the training data, results may be lower.</p>
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock %}

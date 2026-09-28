@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Model Comparison · LMS At-Risk Predictor{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <h1>Model comparison</h1>
+    <p>Four approaches evaluated on the same held-out students. Higher scores are better; shorter training time is better.</p>
+  </div>
+  {% if missing %}
+    <section class="card notice" role="alert">
+      <h2>Comparison results unavailable</h2>
+      <p>Run <code>python compare_models.py</code> in the project folder, then refresh this page.</p>
+    </section>
+  {% else %}
+    <section class="card" aria-labelledby="comparison-table-title">
+      <h2 id="comparison-table-title">Test results</h2>
+      <div class="table-scroll">
+        <table class="comparison-table">
+          <thead><tr><th scope="col">Model</th><th scope="col">Accuracy</th><th scope="col">Precision</th><th scope="col">Recall</th><th scope="col">F1</th><th scope="col">ROC-AUC</th><th scope="col">CV ROC-AUC</th><th scope="col">Training time</th><th scope="col">Setting</th></tr></thead>
+          <tbody>
+            {% for model in models %}
+              <tr>
+                <th scope="row">{{ model.name }}{% if model.deployed %}<span class="deployed-tag">Deployed model</span>{% endif %}</th>
+                {% for key in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc', 'cv_roc_auc'] %}
+                  <td {% if key in model.best_keys %}class="best-value"{% endif %}>{{ '%.3f'|format(model[key]) }}</td>
+                {% endfor %}
+                <td {% if 'training_seconds' in model.best_keys %}class="best-value"{% endif %}>{{ '%.2f'|format(model.training_seconds) }} s</td>
+                <td>{{ model.setting }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">Best value in each metric column is highlighted. Comparison run: {{ trained_at }}.</p>
+    </section>
+
+    <section class="card" aria-labelledby="comparison-bars-title">
+      <h2 id="comparison-bars-title">Recall and ROC-AUC</h2>
+      {% for metric, label in [('recall', 'Recall'), ('roc_auc', 'ROC-AUC')] %}
+        <h3>{{ label }}</h3>
+        <div class="importance-list">
+          {% for model in models %}
+            <div class="importance-item">
+              <div class="importance-label"><span>{{ model.name }}</span><strong>{{ '%.3f'|format(model[metric]) }}</strong></div>
+              <div class="importance-track"><div class="importance-fill" style="width: {{ model[metric] * 100 }}%"></div></div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </section>
+
+    <section class="card" aria-labelledby="takeaway-title">
+      <h2 id="takeaway-title">What the numbers show</h2>
+      <p>{{ takeaways|join(' ') }}</p>
+    </section>
+
+    <section class="card" aria-labelledby="differences-title">
+      <h2 id="differences-title">Why the differences?</h2>
+      <div class="algorithm-grid">
+        <div><h3>Logistic Regression</h3><p>Combines scaled activity measures into a straight-line risk estimate.</p><p>It is simple to interpret but may miss complex interactions.</p></div>
+        <div><h3>K-Nearest Neighbors</h3><p>Looks at students with similar activity patterns.</p><p>It can catch local patterns but depends on the chosen number of neighbors.</p></div>
+        <div><h3>Decision Tree</h3><p>Uses a sequence of yes-or-no splits.</p><p>It is easy to explain but one tree can be sensitive to small data changes.</p></div>
+        <div><h3>Random Forest</h3><p>Averages predictions from many decision trees.</p><p>It can handle interactions, though its decisions are harder to trace directly.</p></div>
+      </div>
+    </section>
+    <p class="limitation-note">The dataset is simulated and its labels were generated from a formula, so these rankings mainly show how each method behaves on this data. Small differences between models are not strong evidence, and real data may rank them differently.</p>
+  {% endif %}
+{% endblock %}

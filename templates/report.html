@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student Risk Report</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="report-page">
+  <main class="container">
+    <div class="report-actions">
+      <button type="button" onclick="window.print()">Print / Save as PDF</button>
+      <a class="secondary-link" href="{{ url_for('dashboard') }}">Back to dashboard</a>
+      <p>In the print window, choose 'Save as PDF' as the destination.</p>
+    </div>
+    <header class="report-header">
+      <h1>Student Risk Report</h1>
+      <p>Generated {{ date_generated }} · Showing: {{ source }}</p>
+    </header>
+
+    <section aria-labelledby="report-summary-title">
+      <h2 id="report-summary-title">Summary</h2>
+      <div class="report-summary">
+        <div><span>Total</span><strong>{{ summary.total }}</strong></div>
+        <div><span>High</span><strong>{{ summary.high }}</strong></div>
+        <div><span>Medium</span><strong>{{ summary.medium }}</strong></div>
+        <div><span>Low</span><strong>{{ summary.low }}</strong></div>
+        <div><span>Average risk</span><strong>{{ summary.average }}</strong></div>
+      </div>
+      <div class="distribution-bar" aria-label="Risk distribution: {{ summary.high }} high, {{ summary.medium }} medium, {{ summary.low }} low">
+        <span class="distribution-high" style="width: {{ distribution.high }}%"></span>
+        <span class="distribution-medium" style="width: {{ distribution.medium }}%"></span>
+        <span class="distribution-low" style="width: {{ distribution.low }}%"></span>
+      </div>
+      <p class="distribution-labels">High {{ summary.high }} · Medium {{ summary.medium }} · Low {{ summary.low }}</p>
+    </section>
+
+    <section aria-labelledby="top-students-title">
+      <h2 id="top-students-title">20 highest-risk students</h2>
+      <table class="report-table">
+        <thead><tr><th scope="col">Student ID</th><th scope="col">Risk</th><th scope="col">Risk probability</th><th scope="col">Main reasons</th></tr></thead>
+        <tbody>
+          {% for student in students %}
+            <tr><th scope="row">{{ student.student_id }}</th><td>{{ student.risk_level|capitalize }}</td><td>{{ student.risk_percent }}</td><td>{{ student.main_risk_factors or 'No major warning signs' }}</td></tr>
+          {% else %}<tr><td colspan="4">No students to show.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="report-performance" aria-labelledby="report-performance-title">
+      <h2 id="report-performance-title">Model performance</h2>
+      {% if metrics %}<p>Accuracy: {{ '%.1f%%'|format(metrics.accuracy * 100) }} · Recall: {{ '%.1f%%'|format(metrics.recall * 100) }} · ROC-AUC: {{ '%.3f'|format(metrics.roc_auc) }}</p>
+      {% else %}<p>Training metrics are unavailable.</p>{% endif %}
+    </section>
+    <p class="limitation-note">Risk levels come from a prototype model trained on simulated data.</p>
+  </main>
+</body>
+</html>

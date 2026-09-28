@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LMS At-Risk Predictor{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main navigation">
+      <strong class="brand">LMS At-Risk Predictor</strong>
+      <div class="nav-links">
+        <a href="{{ url_for('predict') }}" {% if request.endpoint == 'predict' %}aria-current="page"{% endif %}>Predict</a>
+        <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+        <a href="{{ url_for('upload') }}" {% if request.endpoint == 'upload' %}aria-current="page"{% endif %}>Upload Data</a>
+        <a href="{{ url_for('model_performance') }}" {% if request.endpoint == 'model_performance' %}aria-current="page"{% endif %}>Model Performance</a>
+        <a href="{{ url_for('model_comparison') }}" {% if request.endpoint == 'model_comparison' %}aria-current="page"{% endif %}>Model Comparison</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="container">
+    Predictions come from a prototype model trained on simulated data.
+  </footer>
+</body>
+</html>

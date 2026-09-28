@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Data · LMS At-Risk Predictor{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <h1>Upload student data</h1>
+    <p>Upload a CSV with the eight activity columns below. Student IDs and real at-risk labels are optional.</p>
+  </div>
+
+  <section class="card" aria-labelledby="upload-title">
+    <h2 id="upload-title">Choose a CSV</h2>
+    {% if errors %}
+      <div class="upload-errors" role="alert">
+        {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+      <div class="upload-controls">
+        <div class="field">
+          <label for="file">CSV file</label>
+          <p class="help">Up to 2 MB and 5,000 student rows.</p>
+          <input id="file" name="file" type="file" accept=".csv,text/csv" required>
+        </div>
+        <div class="field">
+          <label for="invalid_action">If a row has missing or invalid values</label>
+          <select id="invalid_action" name="invalid_action">
+            <option value="skip">Skip those rows</option>
+            <option value="reject">Reject the file</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit">Upload and score</button>
+      <a class="secondary-link" href="{{ url_for('sample_csv') }}">Download sample CSV</a>
+    </form>
+  </section>
+
+  <section class="card" aria-labelledby="columns-title">
+    <h2 id="columns-title">Required columns</h2>
+    <p>Column names ignore letter case and spaces around the name. Values outside these ranges are adjusted to the nearest limit. Missed deadlines and forum posts must be whole numbers.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th scope="col">Column</th><th scope="col">Description</th><th scope="col">Valid range</th></tr></thead>
+        <tbody>
+          {% for field in fields %}
+            <tr>
+              <th scope="row"><code>{{ field.name }}</code></th>
+              <td>{{ field.help }}</td>
+              <td>{{ field.min }}{% if field.max is not none %} to {{ field.max }}{% else %} or more{% endif %}{% if field.integer %}, whole number{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">Optional: <code>student_id</code> (text or number) and <code>at_risk</code> (0 or 1). If an ID is blank or absent, one is generated.</p>
+  </section>
+{% endblock %}
