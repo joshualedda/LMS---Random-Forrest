@@ -1,7 +1,7 @@
 """Single-student prediction page for the LMS prototype."""
 
 from decimal import Decimal, InvalidOperation
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from io import BytesIO, StringIO
 import csv
@@ -9,6 +9,9 @@ import json
 import math
 import os
 import re
+import shutil
+import tempfile
+import threading
 import time
 from uuid import uuid4
 
@@ -18,6 +21,7 @@ import pandas as pd
 from flask import Flask, redirect, render_template, request, send_file, session, url_for
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 from explain import explain_batch, load_reference
+from train_model import FEATURES, train_and_evaluate
 
 
 app = Flask(__name__)
@@ -32,10 +36,15 @@ STUDENTS_PATH = Path(__file__).resolve().parent / "students.csv"
 METRICS_PATH = Path(__file__).resolve().parent / "metrics.json"
 COMPARISON_PATH = Path(__file__).resolve().parent / "comparison.json"
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+HISTORY_DIR = Path(__file__).resolve().parent / "models" / "history"
+model_lock = threading.Lock()
 bundle = joblib.load(MODEL_PATH) if MODEL_PATH.is_file() else None
 model = bundle["model"] if bundle is not None else None
 features = bundle["features"] if bundle is not None else None
-reference_profile = load_reference(STUDENTS_PATH, features) if features is not None else None
+reference_profile = bundle.get("reference_profile") if bundle is not None else None
+if reference_profile is None and features is not None:
+    reference_profile = load_reference(STUDENTS_PATH, features)  # Legacy model.pkl
+model_changed = False
 
 # Form rules and example values are kept together so the page is easy to update.
 FIELDS = [
@@ -259,6 +268,92 @@ def remove_old_uploads():
                 pass  # Another request may have removed the same old file.
 
 
+def current_upload():
+    """Read only the server-generated CSV named by this session's file ID."""
+    upload_id = session.get("upload_id")
+    if not isinstance(upload_id, str) or not re.fullmatch(r"[0-9a-f]{32}", upload_id):
+        return None
+    path = UPLOAD_DIR / f"{upload_id}.csv"
+    if not path.is_file():
+        return None
+    try:
+        cleaned, _messages = clean_uploaded_data(path.read_bytes(), "reject")
+        return cleaned
+    except (OSError, ValueError):
+        return None
+
+
+def retrain_eligibility(students):
+    """Check labels and enough examples for the stratified 5-fold search."""
+    if students is None:
+        return "Upload a CSV first to retrain the model."
+    if "at_risk" not in students:
+        return "Retraining needs an at_risk column with 0 and 1 labels."
+    counts = students["at_risk"].value_counts()
+    if len(students) < 50:
+        return f"Retraining needs at least 50 rows with both outcomes present. Your file has {len(students)} rows."
+    if counts.get(0, 0) < 10 or counts.get(1, 0) < 10:
+        return ("Retraining needs at least 10 examples of each outcome "
+                f"(at_risk=0 and at_risk=1). Your file has {counts.get(0, 0)} and {counts.get(1, 0)}.")
+    return None
+
+
+def latest_backup():
+    """Only accept a complete model/metrics pair."""
+    for saved_model in sorted(HISTORY_DIR.glob("model_*.pkl"), reverse=True):
+        saved_metrics = HISTORY_DIR / saved_model.name.replace("model_", "metrics_").replace(".pkl", ".json")
+        if saved_metrics.is_file():
+            return saved_model, saved_metrics
+    return None
+
+
+def staged_file(destination, writer):
+    """Write a complete file beside its destination before replacing it."""
+    with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".retrain_", delete=False) as handle:
+        path = Path(handle.name)
+    try:
+        writer(path)
+        return path
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def install_pair(new_model, new_metrics, backup_pair=None):
+    """Replace both files; restore the old pair if the second replace fails."""
+    rollback_model = rollback_metrics = None
+    try:
+        if backup_pair is not None:
+            rollback_model = staged_file(MODEL_PATH, lambda path: shutil.copy2(backup_pair[0], path))
+            rollback_metrics = staged_file(METRICS_PATH, lambda path: shutil.copy2(backup_pair[1], path))
+        os.replace(new_model, MODEL_PATH)
+        os.replace(new_metrics, METRICS_PATH)
+    except Exception:
+        if rollback_model is not None and rollback_metrics is not None:
+            os.replace(rollback_model, MODEL_PATH)
+            os.replace(rollback_metrics, METRICS_PATH)
+        raise
+    finally:
+        new_model.unlink(missing_ok=True)
+        new_metrics.unlink(missing_ok=True)
+        if rollback_model is not None:
+            rollback_model.unlink(missing_ok=True)
+        if rollback_metrics is not None:
+            rollback_metrics.unlink(missing_ok=True)
+
+
+def refresh_model():
+    """Make Predict, Dashboard, and explanations use the newly active model."""
+    global bundle, model, features, reference_profile, dashboard_data, model_changed
+    bundle = joblib.load(MODEL_PATH)
+    model, features = bundle["model"], bundle["features"]
+    reference_profile = bundle.get("reference_profile")
+    if reference_profile is None:
+        reference_profile = load_reference(STUDENTS_PATH, features)
+    dashboard_data = dashboard_view(score_students(pd.read_csv(STUDENTS_PATH))) if STUDENTS_PATH.is_file() else None
+    model_changed = True
+
+
 def active_dashboard_data():
     """Use this session's upload if its saved CSV still exists."""
     upload_id = session.get("upload_id")
@@ -266,7 +361,9 @@ def active_dashboard_data():
         path = UPLOAD_DIR / f"{upload_id}.csv"
         if path.is_file():
             students = pd.read_csv(path, dtype={"student_id": str})
-            if "explanation_json" not in students:
+            if model_changed:
+                students = score_students(students.drop(columns=["risk_probability", "risk_level", "explanation_json", "main_risk_factors"], errors="ignore"))
+            elif "explanation_json" not in students:
                 students = add_explanations(students)
             return dashboard_view(students, uploaded=True), True
     session.pop("upload_id", None)
@@ -366,7 +463,117 @@ def upload():
                         return render_template("upload.html", fields=FIELDS, errors=errors), 503
                     session["upload_id"] = upload_id
                     return redirect(url_for("dashboard", notice=" ".join(messages)))
-    return render_template("upload.html", fields=FIELDS, errors=errors)
+    upload_data = current_upload()
+    return render_template(
+        "upload.html", fields=FIELDS, errors=errors,
+        retrain_ready=upload_data is not None and retrain_eligibility(upload_data) is None,
+        retrain_message=retrain_eligibility(upload_data) if upload_data is not None else None,
+        notice=request.args.get("notice", ""),
+    )
+
+
+@app.route("/retrain", methods=["GET", "POST"])
+def retrain():
+    students = current_upload()
+    reason = retrain_eligibility(students)
+    if reason:
+        return redirect(url_for("upload", notice=reason))
+    counts = students["at_risk"].value_counts()
+    if request.method == "GET":
+        return render_template("retrain.html", rows=len(students), class_0=int(counts[0]), class_1=int(counts[1]))
+
+    with model_lock:
+        new_model = new_metrics = None
+        installed = False
+        backup_model = backup_metrics = None
+        try:
+            # Train and serialize fully before touching the working pair.
+            new_bundle, metrics = train_and_evaluate(students, FEATURES)
+            upload_path = UPLOAD_DIR / f"{session['upload_id']}.csv"
+            uploaded_at = datetime.fromtimestamp(upload_path.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d")
+            metrics["trained_on"] = f"uploaded file, uploaded {uploaded_at} (UTC)"
+            new_model = staged_file(MODEL_PATH, lambda path: joblib.dump(new_bundle, path))
+            new_metrics = staged_file(METRICS_PATH, lambda path: path.write_text(json.dumps(metrics, indent=2), encoding="utf-8"))
+
+            HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S_%f")
+            backup_model = HISTORY_DIR / f"model_{stamp}.pkl"
+            backup_metrics = HISTORY_DIR / f"metrics_{stamp}.json"
+            shutil.copy2(MODEL_PATH, backup_model)
+            try:
+                shutil.copy2(METRICS_PATH, backup_metrics)
+            except Exception:
+                backup_model.unlink(missing_ok=True)
+                raise
+            previous = json.loads(backup_metrics.read_text(encoding="utf-8"))
+            install_pair(new_model, new_metrics, (backup_model, backup_metrics))
+            installed = True
+            refresh_model()
+            # Keep the newest five complete backup pairs.
+            for old_model in sorted(HISTORY_DIR.glob("model_*.pkl"), reverse=True)[5:]:
+                old_metrics = HISTORY_DIR / old_model.name.replace("model_", "metrics_").replace(".pkl", ".json")
+                try:
+                    old_model.unlink(missing_ok=True)
+                    old_metrics.unlink(missing_ok=True)
+                except OSError:
+                    app.logger.warning("Could not prune old model backup %s", old_model)
+        except Exception:
+            if installed:
+                # A failure while refreshing the app must not activate a half-ready model.
+                os.replace(staged_file(MODEL_PATH, lambda path: shutil.copy2(backup_model, path)), MODEL_PATH)
+                os.replace(staged_file(METRICS_PATH, lambda path: shutil.copy2(backup_metrics, path)), METRICS_PATH)
+                refresh_model()
+            if new_model is not None:
+                new_model.unlink(missing_ok=True)
+            if new_metrics is not None:
+                new_metrics.unlink(missing_ok=True)
+            app.logger.exception("Retraining failed")
+            return render_template("retrain.html", rows=len(students), class_0=int(counts[0]), class_1=int(counts[1]),
+                                   error="Retraining could not finish. The previous model is still available. Please check your data and try again."), 500
+
+    labels = [("Accuracy", "accuracy"), ("Precision", "precision"), ("Recall", "recall"),
+              ("F1", "f1"), ("ROC-AUC", "roc_auc"), ("5-fold CV accuracy", "cv_accuracy")]
+    comparison = [
+        {"label": label, "before": previous[key], "after": metrics[key],
+         "arrow": "↑" if metrics[key] > previous[key] else "↓" if metrics[key] < previous[key] else "→"}
+        for label, key in labels
+    ]
+    return render_template("retrain_result.html", metrics=metrics, previous=previous, comparison=comparison)
+
+
+@app.post("/revert")
+def revert():
+    with model_lock:
+        saved = latest_backup()
+        if saved is None:
+            return redirect(url_for("model_performance", notice="No previous model backup is available."))
+        new_model = new_metrics = None
+        try:
+            new_model = staged_file(MODEL_PATH, lambda path: shutil.copy2(saved[0], path))
+            new_metrics = staged_file(METRICS_PATH, lambda path: shutil.copy2(saved[1], path))
+            # Keep a rollback copy of the currently active pair if restoration fails.
+            rollback_model = staged_file(MODEL_PATH, lambda path: shutil.copy2(MODEL_PATH, path))
+            rollback_metrics = staged_file(METRICS_PATH, lambda path: shutil.copy2(METRICS_PATH, path))
+            try:
+                install_pair(new_model, new_metrics, (rollback_model, rollback_metrics))
+                try:
+                    refresh_model()
+                except Exception:
+                    os.replace(rollback_model, MODEL_PATH)
+                    os.replace(rollback_metrics, METRICS_PATH)
+                    refresh_model()
+                    raise
+            finally:
+                rollback_model.unlink(missing_ok=True)
+                rollback_metrics.unlink(missing_ok=True)
+        except Exception:
+            if new_model is not None:
+                new_model.unlink(missing_ok=True)
+            if new_metrics is not None:
+                new_metrics.unlink(missing_ok=True)
+            app.logger.exception("Restore failed")
+            return redirect(url_for("model_performance", notice="Could not restore the backup. The active model was kept."))
+    return redirect(url_for("model_performance", notice="Previous model restored from backup."))
 
 
 @app.errorhandler(413)
@@ -486,7 +693,8 @@ def model_performance():
     ]
     return render_template(
         "model_performance.html", missing=None, cards=cards, bars=bars,
-        metrics=metrics,
+        metrics=metrics, notice=request.args.get("notice", ""),
+        has_backup=latest_backup() is not None,
     )
 
 

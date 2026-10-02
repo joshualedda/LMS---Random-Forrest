@@ -8,6 +8,17 @@
     <p>Upload a CSV with the eight activity columns below. Student IDs and real at-risk labels are optional.</p>
   </div>
 
+  {% if notice %}<section class="card notice" role="status"><p>{{ notice }}</p></section>{% endif %}
+  {% if retrain_ready %}
+    <section class="card notice">
+      <h2>Retrain on this upload</h2>
+      <p>Your labelled upload has enough rows for training.</p>
+      <a class="button-link" href="{{ url_for('retrain') }}">Retrain model on this data</a>
+    </section>
+  {% elif retrain_message %}
+    <section class="card notice"><p>{{ retrain_message }}</p></section>
+  {% endif %}
+
   <section class="card" aria-labelledby="upload-title">
     <h2 id="upload-title">Choose a CSV</h2>
     {% if errors %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Retrain model · LMS At-Risk Predictor{% endblock %}
+{% block content %}
+  <div class="page-heading"><h1>Retrain on uploaded data</h1></div>
+  <section class="card">
+    {% if error %}<div class="upload-errors" role="alert"><p>{{ error }}</p></div>{% endif %}
+    <p>Your upload has <strong>{{ rows }}</strong> valid rows: <strong>{{ class_0 }}</strong> not at risk (0) and <strong>{{ class_1 }}</strong> at risk (1).</p>
+    <p>Retraining will replace the current model and metrics. The current files will be saved in <code>models/history/</code> so you can revert.</p>
+    <form action="{{ url_for('retrain') }}" method="post"><button type="submit">Retrain now</button></form>
+    <p><a class="secondary-link" href="{{ url_for('upload') }}">Back to Upload Data</a></p>
+  </section>
+{% endblock %}
