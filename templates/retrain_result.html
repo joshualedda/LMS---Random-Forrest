@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Retraining results · LMS At-Risk Predictor{% endblock %}
+{% block content %}
+  <div class="page-heading"><h1>Retraining complete</h1><p>New model trained {{ metrics.trained_at }}.</p></div>
+  <section class="card">
+    <h2>Before and after</h2>
+    <p>Scores come from each model's own held-out test set; they use different datasets.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th scope="col">Metric</th><th scope="col">Previous model</th><th scope="col">New model</th><th scope="col">Change</th></tr></thead>
+      <tbody>{% for item in comparison %}<tr><th scope="row">{{ item.label }}</th><td>{{ '%.1f%%'|format(item.before * 100) }}</td><td>{{ '%.1f%%'|format(item.after * 100) }}</td><td aria-label="{{ 'up' if item.arrow == '↑' else 'down' if item.arrow == '↓' else 'unchanged' }}">{{ item.arrow }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  <section class="card">
+    <h2>New confusion matrix</h2>
+    <div class="table-scroll"><table class="matrix-table">
+      <thead><tr><th scope="col">Actual / Predicted</th><th scope="col">Not at risk</th><th scope="col">At risk</th></tr></thead>
+      <tbody><tr><th scope="row">Not at risk</th><td>{{ metrics.confusion_matrix.tn }}</td><td>{{ metrics.confusion_matrix.fp }}</td></tr><tr><th scope="row">At risk</th><td>{{ metrics.confusion_matrix.fn }}</td><td>{{ metrics.confusion_matrix.tp }}</td></tr></tbody>
+    </table></div>
+    <p>Dataset: {{ metrics.dataset.total_rows }} rows ({{ metrics.dataset.class_0 }} not at risk, {{ metrics.dataset.class_1 }} at risk); {{ metrics.dataset.training_rows }} training and {{ metrics.dataset.test_rows }} test rows.</p>
+    <p>This model was trained on your uploaded data. Results depend entirely on the quality and size of that data.</p>
+    <form action="{{ url_for('revert') }}" method="post"><button type="submit">Revert to previous model</button></form>
+    <p><a class="secondary-link" href="{{ url_for('model_performance') }}">Model Performance</a></p>
+  </section>
+{% endblock %}

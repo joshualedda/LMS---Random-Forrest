@@ -7,6 +7,7 @@
     <h1>Model performance</h1>
     <p>Results from the held-out test set and the training data.</p>
   </div>
+  {% if notice %}<section class="card notice" role="status"><p>{{ notice }}</p></section>{% endif %}
 
   {% if missing %}
     <section class="card notice" role="alert">
@@ -14,6 +15,12 @@
       <p>{% if missing == 'missing' %}No <code>metrics.json</code> file was found.{% else %}<code>metrics.json</code> could not be read.{% endif %} Run <code>python train_model.py</code> in the project folder, then refresh this page.</p>
     </section>
   {% else %}
+    {% if metrics.trained_on and metrics.trained_on.startswith('uploaded file') %}
+      <section class="card notice"><p>Retrained {{ metrics.trained_at }} on {{ metrics.trained_on }}.</p></section>
+    {% endif %}
+    {% if has_backup %}
+      <form action="{{ url_for('revert') }}" method="post"><button type="submit">Revert to previous model</button></form>
+    {% endif %}
     <section class="performance-grid" aria-label="Headline model metrics">
       {% for card in cards %}
         <div class="card performance-card">
@@ -74,6 +81,6 @@
       <p>Recall matters most for this project because missing an at-risk student can cost more than a false alarm. Read it alongside precision to understand how often alerts are correct.</p>
     </section>
 
-    <p class="limitation-note">Results come from a prototype model trained on simulated data, so they show the method works, not how it would perform on real students.</p>
+    <p class="limitation-note">{% if metrics.trained_on and metrics.trained_on.startswith('uploaded file') %}This model was trained on your uploaded data. Results depend entirely on the quality and size of that data.{% else %}Results come from a prototype model trained on simulated data, so they show the method works, not how it would perform on real students.{% endif %}</p>
   {% endif %}
 {% endblock %}
