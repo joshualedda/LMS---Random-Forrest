@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}LMS At-Risk Predictor{% endblock %}</title>
+  <title>{% block title %}EduGuard{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  {% if session.get('logged_in') %}
   <header class="site-header">
     <nav class="nav container" aria-label="Main navigation">
-      <strong class="brand">LMS At-Risk Predictor</strong>
+      <strong class="brand">EduGuard</strong>
       <div class="nav-links">
         <a href="{{ url_for('predict') }}" {% if request.endpoint == 'predict' %}aria-current="page"{% endif %}>Predict</a>
         <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
@@ -17,8 +18,13 @@
         <a href="{{ url_for('model_performance') }}" {% if request.endpoint == 'model_performance' %}aria-current="page"{% endif %}>Model Performance</a>
         <a href="{{ url_for('model_comparison') }}" {% if request.endpoint == 'model_comparison' %}aria-current="page"{% endif %}>Model Comparison</a>
       </div>
+      <div class="nav-user">
+        <span>{{ session.get('username') }}</span>
+        <form action="{{ url_for('logout') }}" method="post"><button type="submit">Log out</button></form>
+      </div>
     </nav>
   </header>
+  {% endif %}
 
   <main class="container">
     {% block content %}{% endblock %}

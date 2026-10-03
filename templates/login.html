@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · {{ title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-panel">
+    <h1>{{ title }}</h1>
+    <section class="card" aria-labelledby="sign-in-title">
+      <h2 id="sign-in-title">Sign in</h2>
+      {% if signed_out %}<p class="login-message" role="status">You have been signed out</p>{% endif %}
+      {% if error %}<p class="upload-errors" role="alert">{{ error }}</p>{% endif %}
+      <form action="{{ url_for('login') }}" method="post">
+        <div class="field"><label for="username">Username</label><input id="username" name="username" type="text" autocomplete="username" required autofocus></div>
+        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

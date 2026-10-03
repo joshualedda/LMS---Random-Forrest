@@ -2,6 +2,7 @@
 
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timezone
+from functools import wraps
 from pathlib import Path
 from io import BytesIO, StringIO
 import csv
@@ -9,6 +10,7 @@ import json
 import math
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -20,13 +22,30 @@ import numpy as np
 import pandas as pd
 from flask import Flask, redirect, render_template, request, send_file, session, url_for
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from werkzeug.security import check_password_hash
+try:
+    import config  # Local, git-ignored credentials; start from config.example.py.
+except ModuleNotFoundError as exc:
+    if exc.name == "config":
+        raise RuntimeError("Create config.py from config.example.py before starting EduGuard.") from exc
+    raise
 from explain import explain_batch, load_reference
 from train_model import FEATURES, train_and_evaluate
 
 
 app = Flask(__name__)
-# Set FLASK_SECRET_KEY outside development so session cookies stay private.
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-development-secret-key")
+# A persistent local key keeps development sessions valid across restarts.
+PROJECT_DIR = Path(__file__).resolve().parent
+SECRET_PATH = PROJECT_DIR / ".secret_key"
+if os.environ.get("SECRET_KEY"):
+    app.secret_key = os.environ["SECRET_KEY"]
+else:
+    try:
+        with SECRET_PATH.open("x", encoding="utf-8") as output:
+            output.write(secrets.token_hex(32))
+    except FileExistsError:
+        pass
+    app.secret_key = SECRET_PATH.read_text(encoding="utf-8").strip()
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 MAX_UPLOAD_ROWS = 5000
 
@@ -45,6 +64,18 @@ reference_profile = bundle.get("reference_profile") if bundle is not None else N
 if reference_profile is None and features is not None:
     reference_profile = load_reference(STUDENTS_PATH, features)  # Legacy model.pkl
 model_changed = False
+
+
+def login_required(view):
+    """Send anonymous visitors to login and remember their requested GET page."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("logged_in"):
+            if request.method == "GET":
+                session["next_page"] = request.full_path.rstrip("?")
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
 
 # Form rules and example values are kept together so the page is easy to update.
 FIELDS = [
@@ -374,12 +405,54 @@ def active_dashboard_data():
 dashboard_data = dashboard_view(score_students(pd.read_csv(STUDENTS_PATH))) if model is not None and STUDENTS_PATH.is_file() else None
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("logged_in"):
+        return redirect(url_for("predict"))
+    error = None
+    if request.method == "POST":
+        now = time.time()
+        started = session.get("login_attempt_started", 0)
+        if not isinstance(started, (int, float)) or now - started >= 600:
+            session["login_attempt_started"] = now
+            session["login_failures"] = 0
+
+        # The signed session holds a ten-minute failure window for this browser.
+        if session.get("login_failures", 0) >= 5:
+            error = "Too many attempts. Try again in a few minutes."
+        elif (request.form.get("username", "") == config.ADMIN_USERNAME
+              and check_password_hash(config.ADMIN_PASSWORD_HASH, request.form.get("password", ""))):
+            target = session.pop("next_page", url_for("predict"))
+            session.pop("login_failures", None)
+            session.pop("login_attempt_started", None)
+            session["logged_in"] = True
+            session["username"] = config.ADMIN_USERNAME
+            # Redirect only to a local path remembered by the guard.
+            if not isinstance(target, str) or not target.startswith("/") or target.startswith("//") or "\\" in target:
+                target = url_for("predict")
+            return redirect(target)
+        else:
+            session["login_failures"] = session.get("login_failures", 0) + 1
+            error = "Incorrect username or password"
+    return render_template("login.html", title=config.APP_TITLE, error=error,
+                           signed_out=request.args.get("signed_out") == "1")
+
+
+@app.post("/logout")
+@login_required
+def logout():
+    session.clear()
+    return redirect(url_for("login", signed_out=1))
+
+
 @app.route("/")
+@login_required
 def home():
     return redirect(url_for("predict"))
 
 
 @app.route("/predict", methods=["GET", "POST"])
+@login_required
 def predict():
     # Render an actionable message if training has not produced model.pkl yet.
     if model is None:
@@ -400,6 +473,7 @@ def predict():
 
 
 @app.route("/dashboard")
+@login_required
 def dashboard():
     data, uploaded = active_dashboard_data()
     if data is None:
@@ -424,6 +498,7 @@ def dashboard():
 
 
 @app.route("/upload", methods=["GET", "POST"])
+@login_required
 def upload():
     # Limit only this route so existing Predict requests keep their behavior.
     request.max_content_length = MAX_UPLOAD_BYTES + 64 * 1024
@@ -473,6 +548,7 @@ def upload():
 
 
 @app.route("/retrain", methods=["GET", "POST"])
+@login_required
 def retrain():
     students = current_upload()
     reason = retrain_eligibility(students)
@@ -542,6 +618,7 @@ def retrain():
 
 
 @app.post("/revert")
+@login_required
 def revert():
     with model_lock:
         saved = latest_backup()
@@ -578,16 +655,20 @@ def revert():
 
 @app.errorhandler(413)
 def upload_too_large(_error):
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
     return render_template("upload.html", fields=FIELDS, errors=["The file is too large. Upload a CSV of 2 MB or less."]), 413
 
 
 @app.post("/use-sample-data")
+@login_required
 def use_sample_data():
     session.pop("upload_id", None)
     return redirect(url_for("dashboard"))
 
 
 @app.get("/sample.csv")
+@login_required
 def sample_csv():
     output = StringIO()
     writer = csv.writer(output)
@@ -603,6 +684,7 @@ def sample_csv():
 
 
 @app.get("/download-results")
+@login_required
 def download_results():
     data, _uploaded = active_dashboard_data()
     if data is None:
@@ -635,6 +717,7 @@ def download_results():
 
 
 @app.get("/report")
+@login_required
 def report():
     data, uploaded = active_dashboard_data()
     if data is None:
@@ -659,6 +742,7 @@ def report():
 
 
 @app.route("/model-performance")
+@login_required
 def model_performance():
     # Read the training report when requested so retraining updates the page.
     if not METRICS_PATH.is_file():
@@ -699,6 +783,7 @@ def model_performance():
 
 
 @app.get("/model-comparison")
+@login_required
 def model_comparison():
     if not COMPARISON_PATH.is_file():
         return render_template("model_comparison.html", missing=True), 503

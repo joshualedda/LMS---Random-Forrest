@@ -1,2 +1,4 @@
 uploads/
 models/history/
+config.py
+.secret_key
